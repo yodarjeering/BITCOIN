@@ -801,17 +801,18 @@ class Simulation():
 class CeilSimulation(Simulation):
 
 
-    def __init__(self,alpha=0.8,beta=0.2):
+    def __init__(self,alpha=0.8,beta=0.2,width=20):
         super(CeilSimulation,self).__init__()
         self.alpha = alpha
         self.beta = beta
         self.MK = MakeTrainData
+        self.width = width
 
 
     def make_z_dict(self,df,stride=1,test_rate=1.0):
         z_dict = {}
         lc = LearnClustering()
-        _, z_ = lc.make_x_data(df['close'],stride=stride,test_rate=test_rate)
+        _, z_ = lc.make_x_data(df['close'],stride=stride,test_rate=test_rate,width=self.width)
         length = len(z_)
 
         for i in range(length):
@@ -828,13 +829,16 @@ class CeilSimulation(Simulation):
         return ceil_
 
 
-    def simulate(self,df, is_validate=False,is_online=False,start_year=2021,end_year=2021,start_month=1,end_month=12,
+    def simulate(self,df, is_validate=False,start_year=2021,end_year=2021,start_month=1,end_month=12,
     is_observed=False):
         
-        x_check,y_check,y_,df,pl = self.simulate_routine(df,start_year,end_year,start_month,end_month,'None',is_validate)
+        df,pl = self.simulate_routine(df,start_year,end_year,start_month,end_month)
+        
+
+
+        length = len(df)
         z_dict = self.make_z_dict(df)
         
-        length = len(df)
         
         prf_list = []
         is_bought = False
@@ -851,7 +855,7 @@ class CeilSimulation(Simulation):
         sell_count = 0
         ceil_list = []
 
-        for i in range(length-1):
+        for i in range(self.width,length-1):
 
             time_ = df.index[i]
             z_ = z_dict[time_]
@@ -866,7 +870,7 @@ class CeilSimulation(Simulation):
             # 底で買って, 天井で売る
             is_buy  = ceil_<self.beta
             is_sell = ceil_>self.alpha
-            is_cant_buy = (is_observed and (df['open'].loc[x_check.index[i+1]] < df['close'].loc[x_check.index[i]]))
+            is_cant_buy = (is_observed and (df['open'].loc[df.index[i+1]] < df['close'].loc[x_check.index[i]]))
 
             
             if not is_bought:
@@ -874,7 +878,7 @@ class CeilSimulation(Simulation):
                     cant_buy += 1
                     continue
                 elif is_buy:
-                    index_buy, start_time, is_bought = self.buy(df,x_check,i)
+                    index_buy, start_time, is_bought = self.buy(df,df,i)
                     buy_count += 1
 
             else:
@@ -884,7 +888,7 @@ class CeilSimulation(Simulation):
                     is_trigger = True
 
                 if is_sell or is_trigger:
-                    prf, trade_count, is_bought = self.sell(df,x_check,prf,index_buy,prf_list,trade_count,pl,start_time,i,is_validate)
+                    prf, trade_count, is_bought = self.sell(df,df,prf,index_buy,prf_list,trade_count,pl,start_time,i,is_validate)
                     hold_day = 0
                     is_trigger = False
                     sell_count += 1
@@ -896,22 +900,21 @@ class CeilSimulation(Simulation):
                 
         
         if is_bought:
-            index_sell = df['close'].loc[x_check.index[-1]] 
+            index_sell = df['close'].loc[df.index[-1]] 
             prf += index_sell - index_buy
             prf_list.append(index_sell - index_buy)
-            end_time = x_check.index[-1]
+            end_time = df.index[-1]
             trade_count+=1
             if not is_validate:
                 pl.add_span(start_time,end_time)
 
         
-        ceil_df = pd.DataFrame(ceil_list,columns={'ceil'},index=x_check.index[:-1])
-        self.ceil_df = ceil_df
+        # ceil_df = pd.DataFrame(ceil_list,columns={'ceil'},index=df.index[:-1])
+        # self.ceil_df = ceil_df
         self.pr_log['reward'].loc[df.index[-1]] = prf 
         self.pr_log['eval_reward'].loc[df.index[-1]] = total_eval_price
         prf_array = np.array(prf_list)
-        self.y_check = y_check
-        self.ceil_df = ceil_df
+        # self.ceil_df = ceil_df
         log = self.return_trade_log(prf,trade_count,prf_array,cant_buy)
         self.trade_log = log
 
@@ -932,6 +935,7 @@ class CeilSimulation(Simulation):
         ax.plot(ceil_df['ceil']*scale,label='ceil')
         plt.grid()
         plt.show()
+
 
 class TechnicalSimulation(Simulation):
     
