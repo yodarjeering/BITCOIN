@@ -941,7 +941,7 @@ class TechnicalSimulation(Simulation):
     
     
     def __init__(self,ma_short=5, ma_long=25, hold_day=5, year=2021):
-        super(TechnicalSimulation,self).__init__()
+        super().__init__()
         self.ma_short = ma_short
         self.ma_long = ma_long
         self.hold_day = hold_day
@@ -987,7 +987,8 @@ class TechnicalSimulation(Simulation):
             if not is_bought:
                 
                 if self.is_buyable(short_line,long_line,i):
-                    index_buy = df['close'].iloc[i]
+                    # index_buy = (df['high'].iloc[i] + df['low'].iloc[i])/2
+                    index_buy = (df['close'].iloc[i] + df['open'].iloc[i])/2
                     is_bought = True
                     start_time = df.index[i]
                     hold_count_day = 0
@@ -998,10 +999,10 @@ class TechnicalSimulation(Simulation):
             else:
                 
                 if self.is_sellable(short_line,long_line,i) or hold_count_day==self.hold_day:
-                    index_cell = df['close'].iloc[i]
+                    index_sell =  (df['close'].iloc[i] + df['open'].iloc[i])/2
                     end_time = df.index[i]
-                    prf += index_cell - index_buy
-                    prf_list.append(index_cell - index_buy)
+                    prf += index_sell - index_buy
+                    prf_list.append(index_sell - index_buy)
                     total_eval_price = prf
                     self.pr_log['reward'].loc[df.index[i]] = prf 
                     self.pr_log['eval_reward'].loc[df.index[i]] = total_eval_price
@@ -1030,6 +1031,7 @@ class TechnicalSimulation(Simulation):
         log = self.return_trade_log(prf,trade_count,prf_array,0)
         self.trade_log = log
 
+        print("here")
         if not is_validate:        
             print(log)
             print("")
