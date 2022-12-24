@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 import matplotlib.pyplot as plt
-
+from sklearn.cluster import KMeans
 
 def standarize(df):
     # ddof = 0 : 分散
@@ -463,7 +463,7 @@ class LearnClustering(LearnXGB):
 
 
     def __init__(self,n_cluster=8,random_state=0,width=40,stride=5,strategy_table=None):
-        super(LearnClustering,self).__init__()
+        super().__init__()
         self.model : KMeans = None
         self.n_cluster = n_cluster
         self.width = width
@@ -802,10 +802,9 @@ class CeilSimulation(Simulation):
 
 
     def __init__(self,alpha=0.8,beta=0.2,width=20):
-        super(CeilSimulation,self).__init__()
+        super().__init__()
         self.alpha = alpha
         self.beta = beta
-        self.MK = MakeTrainData
         self.width = width
 
 
@@ -831,8 +830,8 @@ class CeilSimulation(Simulation):
 
     def simulate(self,df, is_validate=False,start_year=2021,end_year=2021,start_month=1,end_month=12,
     is_observed=False):
-        
-        df,pl = self.simulate_routine(df,start_year,end_year,start_month,end_month)
+        df_ = df.copy()
+        df,pl = self.simulate_routine(df_,start_year,end_year,start_month,end_month)
         
 
 
@@ -854,7 +853,6 @@ class CeilSimulation(Simulation):
         buy_count = 0
         sell_count = 0
         ceil_list = []
-
         for i in range(self.width,length-1):
 
             time_ = df.index[i]
@@ -864,6 +862,7 @@ class CeilSimulation(Simulation):
             ceil_list.append(ceil_)
 
             total_eval_price = prf
+
             self.pr_log['reward'].loc[df.index[i]] = prf 
             self.pr_log['eval_reward'].loc[df.index[i]] = total_eval_price
 
@@ -909,12 +908,11 @@ class CeilSimulation(Simulation):
                 pl.add_span(start_time,end_time)
 
         
-        # ceil_df = pd.DataFrame(ceil_list,columns={'ceil'},index=df.index[:-1])
-        # self.ceil_df = ceil_df
+        ceil_df = pd.DataFrame(ceil_list,columns={'ceil'},index=df.iloc[self.width:].index[:-1])
+        self.ceil_df = ceil_df
         self.pr_log['reward'].loc[df.index[-1]] = prf 
         self.pr_log['eval_reward'].loc[df.index[-1]] = total_eval_price
         prf_array = np.array(prf_list)
-        # self.ceil_df = ceil_df
         log = self.return_trade_log(prf,trade_count,prf_array,cant_buy)
         self.trade_log = log
 
@@ -948,25 +946,46 @@ class TechnicalSimulation(Simulation):
         self.year = year
         
     
-    def is_buyable(self, short_line, long_line, index_):
-#         1=<index<=len-1 仮定
+    def is_buyable(self,short_line, long_line,index_):
         long_is_upper = long_line.iloc[index_-1]>short_line.iloc[index_-1]
         long_is_lower = long_line.iloc[index_]<=short_line.iloc[index_]
-        buyable = long_is_upper and long_is_lower
+        
+        # 移動平均線の微分係数が正であるか確認する
+        long_diff_coef = long_line.iloc[index_-self.ma_short:index_].diff().iloc[-4:].sum()
+        short_diff_coef = short_line.iloc[index_-self.ma_short:index_].diff().iloc[-4:].sum()
+        is_long_plus = False
+        is_short_plus = False
+        
+        if long_diff_coef>0:
+            is_long_plus=True
+        
+        if short_diff_coef>0:
+            is_short_plus=True 
+        
+        # is_long_plus , is_short_plus はより厳しい条件
+        buyable = long_is_upper and long_is_lower# and is_long_plus  and is_short_plus
         return buyable
     
     
     def is_sellable(self, short_line, long_line, index_):
         long_is_lower = long_line.iloc[index_-1]<short_line.iloc[index_-1]
         long_is_upper = long_line.iloc[index_]>=short_line.iloc[index_]
-        sellable = long_is_upper and long_is_lower
+        # 短期移動平均線の勾配が 0以下か確認
+        short_coef = short_line.iloc[index_-self.ma_short:index_].diff().iloc[-1]
+        is_grad_zero = False
+        if short_coef<=0:
+            is_grad_zero = True
+        
+        # is_grad_zero はより厳しい条件
+        sellable = (long_is_upper and long_is_lower) or is_grad_zero
         return sellable
 
         
         
     def simulate(self,df,is_validate=False,start_year=2021,end_year=2021,start_month=1,end_month=12):
         
-        df,pl = self.simulate_routine(df,start_year,end_year,start_month,end_month)
+        df_ = df.copy()
+        df,pl = self.simulate_routine(df_,start_year,end_year,start_month,end_month)
         
         prf_list = []
         is_bought = False
@@ -979,7 +998,7 @@ class TechnicalSimulation(Simulation):
         long_line = df['ma_long']
         length = len(df)
 
-        for i in range(1,length):
+        for i in range(self.ma_short,length):
             
             total_eval_price = prf
             self.pr_log['reward'].loc[df.index[i]] = prf 
@@ -987,8 +1006,8 @@ class TechnicalSimulation(Simulation):
             if not is_bought:
                 
                 if self.is_buyable(short_line,long_line,i):
-                    # index_buy = (df['high'].iloc[i] + df['low'].iloc[i])/2
-                    index_buy = (df['close'].iloc[i] + df['open'].iloc[i])/2
+                    index_buy = df['close'].iloc[i]
+                    # index_buy = (df['close'].iloc[i] + df['open'].iloc[i])/2
                     is_bought = True
                     start_time = df.index[i]
                     hold_count_day = 0
@@ -999,7 +1018,8 @@ class TechnicalSimulation(Simulation):
             else:
                 
                 if self.is_sellable(short_line,long_line,i) or hold_count_day==self.hold_day:
-                    index_sell =  (df['close'].iloc[i] + df['open'].iloc[i])/2
+                    # index_sell =  (df['close'].iloc[i] + df['open'].iloc[i])/2
+                    index_sell = df['close'].iloc[i]
                     end_time = df.index[i]
                     prf += index_sell - index_buy
                     prf_list.append(index_sell - index_buy)
@@ -1031,7 +1051,6 @@ class TechnicalSimulation(Simulation):
         log = self.return_trade_log(prf,trade_count,prf_array,0)
         self.trade_log = log
 
-        print("here")
         if not is_validate:        
             print(log)
             print("")
