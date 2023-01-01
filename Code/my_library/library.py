@@ -801,11 +801,12 @@ class Simulation():
 class CeilSimulation(Simulation):
 
 
-    def __init__(self,alpha=0.8,beta=0.2,width=20):
+    def __init__(self,alpha=0.8,beta=0.2,width=20,hold_day=20):
         super().__init__()
         self.alpha = alpha
         self.beta = beta
         self.width = width
+        self.hold_day = hold_day
 
 
     def make_z_dict(self,df,stride=1,test_rate=1.0):
@@ -869,6 +870,9 @@ class CeilSimulation(Simulation):
             # 底で買って, 天井で売る
             is_buy  = ceil_<self.beta
             is_sell = ceil_>self.alpha
+            # 底で売って, 天井で買う
+            # is_sell  = ceil_<self.beta
+            # is_buy = ceil_>self.alpha
             is_cant_buy = (is_observed and (df['open'].loc[df.index[i+1]] < df['close'].loc[x_check.index[i]]))
 
             
@@ -877,17 +881,22 @@ class CeilSimulation(Simulation):
                     cant_buy += 1
                     continue
                 elif is_buy:
-                    index_buy, start_time, is_bought = self.buy(df,df,i)
+                    # i が現在
+                    # 関数 buy, sell では index+1 しているため, 引数 -1 する
+                    index_buy, start_time, is_bought = self.buy(df,df,i-1)
+                    index_buy = df['high'].iloc[i]
                     buy_count += 1
 
             else:
                 hold_day += 1
-                if hold_day>=20:
+                if hold_day>=self.hold_day:
                     trigger_count+=1
                     is_trigger = True
 
                 if is_sell or is_trigger:
-                    prf, trade_count, is_bought = self.sell(df,df,prf,index_buy,prf_list,trade_count,pl,start_time,i,is_validate)
+                    prf, trade_count, is_bought = self.sell(df,df,prf,index_buy,prf_list,trade_count,pl,start_time,i-1,is_validate)
+                    index_sell = df['low'].iloc[i]
+                    prf = index_sell-index_buy
                     hold_day = 0
                     is_trigger = False
                     sell_count += 1
