@@ -1066,3 +1066,106 @@ class TechnicalSimulation(Simulation):
             pl.show()    
 
 
+class BearMarketSimulation(Simulation):
+    
+    
+    def __init__(self,ma_short=5, ma_long=25, hold_day=5, year=2021):
+        super().__init__()
+        self.ma_short = ma_short
+        self.ma_long = ma_long
+        self.hold_day = hold_day
+        self.year = year
+        
+    
+    def is_buyable(self,short_line, long_line,index_):
+        long_is_upper = long_line.iloc[index_-1]>short_line.iloc[index_-1]
+        long_is_lower = long_line.iloc[index_]<=short_line.iloc[index_]
+        buyable = long_is_upper and long_is_lower
+        return buyable
+    
+    
+    def is_sellable(self, short_line, long_line, index_):
+        long_is_lower = long_line.iloc[index_-1]<short_line.iloc[index_-1]
+        long_is_upper = long_line.iloc[index_]>=short_line.iloc[index_]
+        sellable = (long_is_upper and long_is_lower)
+        return sellable
+
+        
+        
+    def simulate(self,df,is_validate=False,start_year=2021,end_year=2021,start_month=1,end_month=12):
+        
+        df_ = df.copy()
+        df,pl = self.simulate_routine(df_,start_year,end_year,start_month,end_month)
+        
+        prf_list = []
+        is_bought = True
+        index_buy = 0
+        prf = 0
+        trade_count = 0
+        eval_price = 0
+        total_eval_price = 0
+        short_line = df['ma_short']
+        long_line = df['ma_long']
+        length = len(df)
+
+        for i in range(self.ma_short,length):
+            
+            total_eval_price = prf
+            self.pr_log['reward'].loc[df.index[i]] = prf 
+            self.pr_log['eval_reward'].loc[df.index[i]] = total_eval_price
+            if not is_bought:
+                
+                if self.is_buyable(short_line,long_line,i)  or hold_count_day==self.hold_day:
+                    index_buy = df['high'].iloc[i]
+                    # index_buy = (df['close'].iloc[i] + df['open'].iloc[i])/2
+                    is_bought = True
+                    end_time = df.index[i]
+                    hold_count_day = 0
+                    prf += index_sell - index_buy
+                    prf_list.append(index_sell - index_buy)
+                    total_eval_price = prf
+                    self.pr_log['reward'].loc[df.index[i]] = prf 
+                    self.pr_log['eval_reward'].loc[df.index[i]] = total_eval_price
+                    pl.add_span(start_time,end_time)
+                else:
+                    continue
+            
+            
+            else:
+                
+                if self.is_sellable(short_line,long_line,i):
+                    # index_sell =  (df['close'].iloc[i] + df['open'].iloc[i])/2
+                    index_sell = df['low'].iloc[i]
+                    start_time = df.index[i]
+                    
+                    trade_count+=1
+                    is_bought = False
+                    hold_count_day = 0
+                    
+                else:
+                    hold_count_day+=1
+                    eval_price = df['close'].iloc[i] - index_buy
+                    total_eval_price += eval_price
+                    self.pr_log['eval_reward'].loc[df.index[i]] = total_eval_price
+                    
+        
+        if not is_bought:
+            end_time = df['close'].index[-1]
+            index_sell = df['close'].iloc[-1]
+            pl.add_span(start_time,end_time)
+            eval_price = index_sell - index_buy
+            prf += eval_price
+            prf_list.append(prf)
+            total_eval_price += eval_price
+            self.pr_log['eval_reward'].loc[df.index[-1]] = total_eval_price
+        
+        prf_array = np.array(prf_list)
+        log = self.return_trade_log(prf,trade_count,prf_array,0)
+        self.trade_log = log
+
+        if not is_validate:        
+            print(log)
+            print("")
+            pl.show()    
+
+
